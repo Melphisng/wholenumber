@@ -1,0 +1,478 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>数学练习应用</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body {
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        table td {
+            word-break: break-all;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        button {
+            min-height: 48px;
+        }
+        input[type="text"], input[type="number"] {
+            -webkit-appearance: none;
+            appearance: none;
+            font-size: 1.1rem;
+        }
+        .keypad-button {
+            width: 100%;
+            height: 48px;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+            margin-top: 8px;
+        }
+        @media (min-width: 640px) {
+            .keypad {
+                display: none;
+            }
+            input[type="text"]#answerText {
+                display: none;
+            }
+            input[type="number"] {
+                display: block;
+            }
+        }
+        @media (max-width: 639px) {
+            input[type="number"] {
+                display: none;
+            }
+            input[type="text"]#answerText {
+                display: block;
+            }
+            #downloadImage {
+                display: none; /* Hide download button on mobile to prioritize sharing */
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen px-2">
+    <div class="bg-white p-4 sm:p-6 rounded-lg shadow-lg w-full max-w-md">
+        <h1 class="text-xl sm:text-2xl font-bold text-center mb-4">数学练习：正负数</h1>
+        <p class="text-center text-sm sm:text-base mb-2">作者：颜毅翔</p>
+        <p class="text-center text-sm sm:text-base mb-4">AI 工具使用：部分代码由 AI（Grok 3）辅助生成，创意与逻辑由作者构思。</p>
+        <div id="difficultySection" class="mb-4">
+            <label for="userName" class="block text-center mb-2 text-base sm:text-lg">输入你的名字:</label>
+            <input id="userName" type="text" class="w-full p-2 border rounded text-base sm:text-lg mb-2" placeholder="请输入名字" oninput="toggleStartButton()">
+            <label for="difficulty" class="block text-center mb-2 text-base sm:text-lg">选择难度:</label>
+            <select id="difficulty" class="w-full p-2 border rounded text-base sm:text-lg">
+                <option value="basic">基础（两位单笔运算）</option>
+                <option value="easy">简单（两位双位数运算）</option>
+                <option value="advanced">进阶（三位加减或乘除）</option>
+                <option value="hard">困难（四位混合运算）</option>
+            </select>
+            <button id="startButton" onclick="startSet()" class="w-full bg-blue-500 text-white p-3 rounded mt-2 hover:bg-blue-600 text-base sm:text-lg" disabled>开始</button>
+        </div>
+        <div id="quizSection" class="hidden">
+            <p class="text-center mb-2 text-base sm:text-lg">题目 <span id="currentQuestion">1</span>/10</p>
+            <div id="problem" class="text-lg sm:text-xl text-center mb-4 break-words"></div>
+            <input id="answer" type="number" inputmode="numeric" class="w-full p-3 mb-4 border rounded text-base sm:text-lg" placeholder="输入你的答案">
+            <input id="answerText" type="text" readonly class="w-full p-3 mb-4 border rounded text-base sm:text-lg" placeholder="输入你的答案">
+            <div class="keypad" id="keypad">
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('7')">7</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('8')">8</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('9')">9</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('-')">−</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('4')">4</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('5')">5</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('6')">6</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('.')">.</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('1')">1</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('2')">2</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('3')">3</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="clearAnswer()">C</button>
+                <button class="keypad-button bg-gray-200 hover:bg-gray-300" onclick="addToAnswer('0')">0</button>
+                <button class="keypad-button bg-red-200 hover:bg-red-300" onclick="backspace()">⌫</button>
+                <button class="keypad-button bg-blue-500 text-white hover:bg-blue-600 col-span-2" onclick="checkAnswer()">提交</button>
+            </div>
+            <button id="submitButton" onclick="checkAnswer()" class="w-full bg-blue-500 text-white p-3 rounded mt-4 hover:bg-blue-600 text-base sm:text-lg">提交</button>
+            <p id="feedback" class="text-center mt-4 text-base sm:text-lg"></p>
+            <div class="mt-4 text-center">
+                <p class="text-base sm:text-lg">得分: <span id="score">0</span>/<span id="total">0</span></p>
+            </div>
+        </div>
+        <div id="resultsSection" class="hidden">
+            <h2 class="text-lg sm:text-xl font-bold text-center mb-4">结果</h2>
+            <p id="userNameDisplay" class="text-center mb-2 text-base sm:text-lg"></p>
+            <p id="completionDateTime" class="text-center mb-2 text-base sm:text-lg"></p>
+            <p id="difficultyDisplay" class="text-center mb-2 text-base sm:text-lg"></p>
+            <p id="timeTaken" class="text-center mb-2 text-base sm:text-lg"></p>
+            <p id="scoreMessage" class="text-center mb-4 text-base sm:text-lg"></p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm sm:text-base">
+                    <thead>
+                        <tr class="bg-gray-200">
+                            <th class="border p-2">题目</th>
+                            <th class="border p-2">你的答案</th>
+                            <th class="border p-2">对错</th>
+                            <th class="border p-2">正确答案</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results"></tbody>
+                </table>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-2 mt-4">
+                <button id="shareImage" onclick="shareImage()" class="w-full bg-yellow-500 text-white p-3 rounded hover:bg-yellow-600 text-base sm:text-lg">分享图片</button>
+                <button id="downloadImage" onclick="downloadImage()" class="w-full bg-gray-500 text-white p-3 rounded hover:bg-gray-600 text-base sm:text-lg">下载图片</button>
+                <button onclick="restart()" class="w-full bg-green-500 text-white p-3 rounded hover:bg-green-600 text-base sm:text-lg">重新开始</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let correctAnswer = 0;
+        let score = 0;
+        let total = 0;
+        let currentQuestion = 0;
+        let questions = [];
+        let userAnswers = [];
+        let correctAnswers = [];
+        let startTime;
+        let userName = '';
+        let selectedDifficulty = '';
+        const encouragements = [
+            '干得漂亮！继续加油！',
+            '太棒了！你很厉害！',
+            '好样的！再接再厉！',
+            '非常好！保持下去！',
+            '真聪明！继续努力！'
+        ];
+        const highScoreMessages = [
+            '太出色了！你是数学小天才！',
+            '非常棒！你的表现令人惊叹！',
+            '完美！你是计算高手！'
+        ];
+        const lowScoreMessages = [
+            '别灰心！多练习几次你会更棒！',
+            '继续努力！下次一定能得高分！',
+            '没关系！再试一次，你会进步的！'
+        ];
+
+        function generateNumber(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function formatNumber(num) {
+            return num < 0 ? `(${num})` : num;
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}分${secs}秒`;
+        }
+
+        function formatDateTime(date) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${day}/${month}/${year} ${hours}:${minutes}`;
+        }
+
+        function toggleStartButton() {
+            const userNameInput = document.getElementById('userName');
+            const startButton = document.getElementById('startButton');
+            userName = userNameInput.value.trim();
+            startButton.disabled = userName === '';
+        }
+
+        function addToAnswer(char) {
+            const answerText = document.getElementById('answerText');
+            const current = answerText.value;
+            if (char === '-' && (current.includes('-') || current.length > 0)) return;
+            if (char === '.' && current.includes('.')) return;
+            if (current === '-' && char >= '0' && char <= '9') {
+                answerText.value = '-' + char;
+            } else if (current === '' && char !== '-') {
+                answerText.value = char;
+            } else if (current !== '-' && char !== '-') {
+                answerText.value += char;
+            } else if (char === '-' && current === '') {
+                answerText.value = '-';
+            }
+            document.getElementById('answer').value = answerText.value;
+        }
+
+        function clearAnswer() {
+            document.getElementById('answerText').value = '';
+            document.getElementById('answer').value = '';
+        }
+
+        function backspace() {
+            const answerText = document.getElementById('answerText');
+            answerText.value = answerText.value.slice(0, -1);
+            document.getElementById('answer').value = answerText.value;
+        }
+
+        async function shareImage() {
+            try {
+                const canvas = await html2canvas(document.getElementById('resultsSection'), { scale: 2 });
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                const file = new File([blob], 'math-results.png', { type: 'image/png' });
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: '数学练习结果',
+                        text: `${userName}的数学练习成绩！`
+                    });
+                } else {
+                    alert('您的设备不支持直接分享图片，请下载图片后手动分享。');
+                    downloadImage();
+                }
+            } catch (error) {
+                console.error('分享失败:', error);
+                alert('分享图片失败，请尝试下载图片。');
+                downloadImage();
+            }
+        }
+
+        async function downloadImage() {
+            try {
+                const canvas = await html2canvas(document.getElementById('resultsSection'), { scale: 2 });
+                const link = document.createElement('a');
+                link.href = canvas.toDataURL('image/png');
+                link.download = 'math-results.png';
+                link.click();
+            } catch (error) {
+                console.error('下载失败:', error);
+                alert('下载图片失败，请稍后再试。');
+            }
+        }
+
+        function generateProblem() {
+            const difficulty = document.getElementById('difficulty').value;
+            let num1, num2, num3, num4, operation1, operation2, operation3;
+            const addSubOps = ['+', '-'];
+            const mulDivOps = ['×', '÷'];
+            let problem, evalProblem, result;
+
+            do {
+                if (difficulty === 'basic') {
+                    num1 = generateNumber(-9, 9);
+                    num2 = generateNumber(-9, 9);
+                    const operations = [...addSubOps, ...mulDivOps];
+                    operation1 = operations[Math.floor(Math.random() * operations.length)];
+                    if (operation1 === '÷') {
+                        while (num2 === 0 || num1 % num2 !== 0) {
+                            num2 = generateNumber(-9, 9);
+                        }
+                    }
+                    problem = `${formatNumber(num1)} ${operation1} ${formatNumber(num2)}`;
+                    evalProblem = `${num1} ${operation1 === '×' ? '*' : operation1 === '÷' ? '/' : operation1} ${num2}`;
+                } else if (difficulty === 'easy') {
+                    num1 = generateNumber(-99, 99);
+                    num2 = generateNumber(-99, 99);
+                    const operations = [...addSubOps, ...mulDivOps];
+                    operation1 = operations[Math.floor(Math.random() * operations.length)];
+                    if (operation1 === '÷') {
+                        while (num2 === 0 || num1 % num2 !== 0) {
+                            num2 = generateNumber(-99, 99);
+                        }
+                    }
+                    problem = `${formatNumber(num1)} ${operation1} ${formatNumber(num2)}`;
+                    evalProblem = `${num1} ${operation1 === '×' ? '*' : operation1 === '÷' ? '/' : operation1} ${num2}`;
+                } else if (difficulty === 'advanced') {
+                    num1 = generateNumber(-50, 50);
+                    num2 = generateNumber(-50, 50);
+                    num3 = generateNumber(-50, 50);
+                    const useAddSub = Math.random() < 0.5;
+                    const operations = useAddSub ? addSubOps : mulDivOps;
+                    operation1 = operations[Math.floor(Math.random() * operations.length)];
+                    operation2 = operations[Math.floor(Math.random() * operations.length)];
+                    if (operation1 === '÷' || operation2 === '÷') {
+                        if (operation1 === '÷') {
+                            while (num2 === 0 || num1 % num2 !== 0) {
+                                num2 = generateNumber(-50, 50);
+                            }
+                        }
+                        if (operation2 === '÷') {
+                            const intermediate = eval(`${num1} ${operation1 === '×' ? '*' : operation1 === '÷' ? '/' : operation1} ${num2}`);
+                            while (num3 === 0 || intermediate % num3 !== 0) {
+                                num3 = generateNumber(-50, 50);
+                            }
+                        }
+                    }
+                    problem = `${formatNumber(num1)} ${operation1} ${formatNumber(num2)} ${operation2} ${formatNumber(num3)}`;
+                    evalProblem = `${num1} ${operation1 === '×' ? '*' : operation1 === '÷' ? '/' : operation1} ${num2} ${operation2 === '×' ? '*' : operation2 === '÷' ? '/' : operation2} ${num3}`;
+                } else if (difficulty === 'hard') {
+                    num1 = generateNumber(-50, 50);
+                    num2 = generateNumber(-50, 50);
+                    num3 = generateNumber(-50, 50);
+                    num4 = generateNumber(-50, 50);
+                    const operations = [...addSubOps, ...mulDivOps];
+                    operation1 = operations[Math.floor(Math.random() * operations.length)];
+                    operation2 = operations[Math.floor(Math.random() * operations.length)];
+                    operation3 = operations[Math.floor(Math.random() * operations.length)];
+                    if (operation1 === '÷' || operation2 === '÷' || operation3 === '÷') {
+                        if (operation1 === '÷') {
+                            while (num2 === 0 || num1 % num2 !== 0) {
+                                num2 = generateNumber(-50, 50);
+                            }
+                        }
+                        if (operation2 === '÷') {
+                            const intermediate1 = eval(`${num1} ${operation1 === '×' ? '*' : operation1 === '÷' ? '/' : operation1} ${num2}`);
+                            while (num3 === 0 || intermediate1 % num3 !== 0) {
+                                num3 = generateNumber(-50, 50);
+                            }
+                        }
+                        if (operation3 === '÷') {
+                            const intermediate2 = eval(`${num1} ${operation1 === '×' ? '*' : operation1 === '÷' ? '/' : operation1} ${num2} ${operation2 === '×' ? '*' : operation2 === '÷' ? '/' : operation2} ${num3}`);
+                            while (num4 === 0 || intermediate2 % num4 !== 0) {
+                                num4 = generateNumber(-50, 50);
+                            }
+                        }
+                    }
+                    problem = `${formatNumber(num1)} ${operation1} ${formatNumber(num2)} ${operation2} ${formatNumber(num3)} ${operation3} ${formatNumber(num4)}`;
+                    evalProblem = `${num1} ${operation1 === '×' ? '*' : operation1 === '÷' ? '/' : operation1} ${num2} ${operation2 === '×' ? '*' : operation2 === '÷' ? '/' : operation2} ${num3} ${operation3 === '×' ? '*' : operation3 === '÷' ? '/' : operation3} ${num4}`;
+                }
+                result = eval(evalProblem);
+            } while (!Number.isInteger(result));
+
+            correctAnswer = result;
+            questions.push(problem);
+            correctAnswers.push(correctAnswer);
+            document.getElementById('problem').textContent = `解决: ${problem}`;
+            document.getElementById('answer').value = '';
+            document.getElementById('answerText').value = '';
+            document.getElementById('feedback').textContent = '';
+            document.getElementById('currentQuestion').textContent = currentQuestion + 1;
+        }
+
+        function startSet() {
+            score = 0;
+            total = 0;
+            currentQuestion = 0;
+            questions = [];
+            userAnswers = [];
+            correctAnswers = [];
+            startTime = Date.now();
+            selectedDifficulty = document.getElementById('difficulty').options[document.getElementById('difficulty').selectedIndex].text;
+            document.getElementById('score').textContent = score;
+            document.getElementById('total').textContent = total;
+            document.getElementById('difficultySection').classList.add('hidden');
+            document.getElementById('quizSection').classList.remove('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+            generateProblem();
+        }
+
+        function checkAnswer() {
+            const userAnswer = parseFloat(document.getElementById('answer').value);
+            userAnswers.push(userAnswer);
+            total++;
+            if (userAnswer === correctAnswer) {
+                score++;
+                const encouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
+                document.getElementById('feedback').textContent = encouragement;
+                document.getElementById('feedback').className = 'text-center mt-4 text-green-500';
+            } else {
+                document.getElementById('feedback').textContent = `错误。答案是 ${correctAnswer}。`;
+                document.getElementById('feedback').className = 'text-center mt-4 text-red-500';
+            }
+            document.getElementById('score').textContent = score;
+            document.getElementById('total').textContent = total;
+            currentQuestion++;
+            if (currentQuestion < 10) {
+                generateProblem();
+            } else {
+                showResults();
+            }
+        }
+
+        function showResults() {
+            document.getElementById('quizSection').classList.add('hidden');
+            document.getElementById('resultsSection').classList.remove('hidden');
+            const endTime = Date.now();
+            const timeTaken = (endTime - startTime) / 1000;
+            document.getElementById('userNameDisplay').textContent = `姓名: ${userName}`;
+            document.getElementById('completionDateTime').textContent = `完成时间: ${formatDateTime(new Date())}`;
+            document.getElementById('difficultyDisplay').textContent = `难度: ${selectedDifficulty}`;
+            document.getElementById('timeTaken').textContent = `用时: ${formatTime(timeTaken)}`;
+            document.getElementById('scoreMessage').textContent = score >= 8 
+                ? highScoreMessages[Math.floor(Math.random() * highScoreMessages.length)]
+                : lowScoreMessages[Math.floor(Math.random() * lowScoreMessages.length)];
+            let resultsHtml = '';
+            for (let i = 0; i < questions.length; i++) {
+                const isCorrect = userAnswers[i] === correctAnswers[i];
+                resultsHtml += `
+                    <tr>
+                        <td class="border p-2">${questions[i]}</td>
+                        <td class="border p-2">${userAnswers[i]}</td>
+                        <td class="border p-2 ${isCorrect ? 'text-green-500' : 'text-red-500'}">${isCorrect ? '正确' : '错误'}</td>
+                        <td class="border p-2">${correctAnswers[i]}</td>
+                    </tr>`;
+            }
+            document.getElementById('results').innerHTML = resultsHtml;
+        }
+
+        function restart() {
+            document.getElementById('resultsSection').classList.add('hidden');
+            document.getElementById('difficultySection').classList.remove('hidden');
+            document.getElementById('userName').value = '';
+            toggleStartButton();
+        }
+
+        // Initialize with difficulty selection visible
+        document.getElementById('difficultySection').classList.remove('hidden');
+        document.getElementById('quizSection').classList.add('hidden');
+        document.getElementById('resultsSection').classList.add('hidden');
+    </script>
+</body>
+</html>
